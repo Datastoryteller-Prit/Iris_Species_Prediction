@@ -1,0 +1,618 @@
+---
+title: "Iris Predictive Analysis: A Species-Specific Model Exploration"
+author: "Pritam Naskar"
+date: "`r Sys.Date()`"
+output: html_document
+runtime: shiny
+---
+
+# Introduction:
+
+The Iris dataset is one of the most famous datasets in the field of **machine learning** and **statistics**. It was introduced by the British biologist and statistician **Ronald A. Fisher** in his 1936 paper **"The Use of Multiple Measurements in Taxonomic Problems"** as an example of discriminant analysis.
+
+------------------------------------------------------------------------
+
+# Import Libraries:
+
+```{r,echo=TRUE,message=FALSE}
+library(datasets)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(kableExtra)
+library(gridExtra)
+library(GGally)
+library(nnet)
+library(randomForest)
+library(caret)
+library(MASSExtra)
+library(car)
+library(shiny)
+```
+
+------------------------------------------------------------------------
+
+# Import Dataset:
+
+The Iris dataset is included in the `datasets` package in R, making it readily available for analysis. To load the Iris dataset in R:
+
+```{r}
+data(iris)
+head(iris)
+```
+
+------------------------------------------------------------------------
+
+# Descriptive Statistic:
+
+Here is the overview of the Iris dataset:
+
+```{r}
+cat("This dataset has", nrow(iris), "rows and", ncol(iris), "columns.\n")
+```
+
+```{r}
+str(iris)
+```
+
+```{r}
+options(width = 100)
+summary(iris)
+any(is.na(iris)) #checking null value
+```
+
+This dataset contains no missing values, which is an advantage for me.
+
+------------------------------------------------------------------------
+
+# Correlation Analysis:
+
+Let's check how the variables in the Iris dataset are correlated with each other.
+
+```{r}
+iris_numeric <- iris[, sapply(iris, is.numeric)] #storing numeric columns
+corr_coef<-cor(iris_numeric)# correlation coefficient
+corrplot(corr_coef,"color",addgrid.col = T,
+  addCoef.col = T)
+```
+
+Finding correlation coefficients with absolute values greater than or equal to 0.5, while removing **self-correlation**.
+
+```{r}
+high_correlation<-which(abs(corr_coef)>=0.5,arr.ind = T)
+high_correlation<-high_correlation[high_correlation[,1] != high_correlation[,2],] 
+result <- data.frame(
+  Variable1 = character(),
+  Variable2 = character(),
+  Correlation = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (i in 1:nrow(high_correlation)) {
+  row <- high_correlation[i, 1]
+  col <- high_correlation[i, 2]
+  result <- rbind(result, data.frame(
+    Variable1 = colnames(iris_numeric)[row],
+    Variable2 = colnames(iris_numeric)[col],
+    Correlation = corr_coef[row, col]
+  ))
+}
+result <- result[!duplicated(t(apply(result, 1, sort))), ] # remove duplicate
+
+kable(result, caption = "Variable Pairs with Absolute Correlation Coefficient >= 0.5")
+```
+
+------------------------------------------------------------------------
+
+# Data Visualisation:
+
+Now, let's check the data through visualization.
+
+> > **1.Histograms of Iris Dataset Variables:**
+
+```{r}
+p1 <- ggplot(iris, aes(x = Sepal.Length)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.5, fill = "skyblue3", color = "black") +
+  geom_density(color = "black", linewidth = 0.5, alpha = 0.1) +
+  labs(title = "Histogram of Sepal Length",
+       x = "Sepal Length",
+       y = "Density") 
+  
+p2 <- ggplot(iris, aes(x = Sepal.Width)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.5, fill = "skyblue3", color = "black") +
+  geom_density(color = "black", size = 0.5, alpha = 0.1) +
+  labs(title = "Histogram of Sepal Width",
+       x = "Sepal Width",
+       y = "Density")
+
+p3 <- ggplot(iris, aes(x = Petal.Length)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.5, fill = "skyblue3", color = "black") +
+  geom_density(color = "black", size = 0.5, alpha = 0.1) +
+  labs(title = "Histogram of Petal Length",
+       x = "Petal Length",
+       y = "Density")
+
+p4 <- ggplot(iris, aes(x = Petal.Width)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.5, fill = "skyblue3", color = "black") +
+  geom_density(color = "black", size = 0.5, alpha = 0.1) +
+  labs(title = "Histogram of Petal Width",
+       x = "Petal Width",
+       y = "Density")
+
+grid.arrange(p1, p2, p3, p4)
+```
+
+> > **2.Pair Plots of Iris Dataset Variables:**
+
+```{r}
+ggpairs(iris, aes(color = Species, alpha = 0.8),
+        columns = c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"),
+        title = "Scatter Plot Matrix of Iris Dataset")
+```
+
+> > **3.Boxplots of Iris Dataset Variables:**
+
+```{r}
+b1 <- ggplot(iris, aes(x = Species,y = Petal.Length, fill = Species))+
+  geom_boxplot(position = "dodge2")+
+  labs(title = "Boxplot of Petal Length",
+       x = "Species",
+       y = "Petal Length")+
+  theme(legend.position = "none") 
+
+b2 <- ggplot(iris, aes(x = Species,y = Petal.Width, fill = Species))+
+  geom_boxplot(position = "dodge2")+
+  labs(title = "Boxplot of Petal Width",
+       x = "Species",
+       y = "Petal Width")+
+  theme(legend.position = "none") 
+
+b3 <- ggplot(iris, aes(x = Species,y = Sepal.Length, fill = Species))+
+  geom_boxplot(position = "dodge2")+
+  labs(title = "Boxplot of Sepal Length",
+       x = "Species",
+       y = "Sepal Length")+
+  theme(legend.position = "none") 
+
+b4 <- ggplot(iris, aes(x = Species,y =Sepal.Width, fill = Species))+
+  geom_boxplot(position = "dodge2")+
+  labs(title = "Boxplot of Sepal Width",
+       x = "Species",
+       y = "Sepal Width")+
+  theme(legend.position = "none") 
+
+grid.arrange(b1, b2, b3, b4, nrow = 2, ncol = 2)
+```
+
+> > **4.Findings:**\
+> > \* For `petal length`, `petal width`, and `sepal length`, **Setosa** values are lower and **Virginica** values are higher.\
+> > \* For `sepal width`, **Setosa** values are higher and **Versicolor** values are lower.
+
+------------------------------------------------------------------------
+
+# Predictive modeling:
+
+Let's create models to predict species and evaluate its accuracy.
+
+> > **1.Separating the Dataset into Training and Testing Sets:**\
+> > To ensure a robust evaluation of my model, I use an **80:20 split**, allocating 80% of the data for training and 20% for testing.
+
+```{r}
+set.seed(598)
+sample_size <- floor(0.8 * nrow(iris))
+train_indices <- sample(seq_len(nrow(iris)), size = sample_size)
+train_data <- iris[train_indices, ]
+test_data <- iris[-train_indices, ]
+cat("Training data has", nrow(train_data), "rows and", ncol(train_data), "columns.\n","Testing data has", nrow(test_data), "rows and", ncol(test_data), "columns.\n")
+```
+
+> > **2.Multinomial Logistic Regression:**\
+> > The `multinom` function in R, part of the `nnet` package, is used for multinomial logistic regression. I use it as the dependent variable `Species` is categorical with more than two levels(3 levels).
+
+```{r,echo= T,results='hide'}
+model <- multinom(Species ~ Sepal.Length + Sepal.Width + Petal.Length + Petal.Width, data = train_data)
+```
+
+```{r}
+summary(model)
+predictions <- predict(model, test_data)
+confusion_matrix <- table(predictions, test_data$Species)
+print(confusion_matrix)
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy of the model:", accuracy * 100, "%\n")
+```
+
+> > **3.Random Forest:**\
+> > This function `randomForest()` is from the `randomForest` package in R, which implements the Random Forest algorithm. Random Forest is an ensemble learning method that builds multiple decision trees and merges them to get a more accurate and stable prediction.
+
+```{r}
+model_rf <- randomForest(Species ~ Sepal.Length + Sepal.Width + Petal.Length + Petal.Width, data = train_data)
+
+print(model_rf)
+
+predictions_rf <- predict(model_rf, test_data)
+
+confusion_matrix_rf <- table(predictions_rf, test_data$Species)
+
+print(confusion_matrix_rf)
+
+accuracy_rf <- sum(diag(confusion_matrix_rf)) / sum(confusion_matrix_rf)
+cat("Accuracy of the model:", accuracy_rf * 100, "%\n")
+```
+
+> > **4.Assessing Variable Importance:**
+
+```{r}
+importance_df <- data.frame(Variable = rownames(importance(model_rf)), 
+                            Importance = importance(model_rf)[, "MeanDecreaseGini"])
+
+
+ggplot(importance_df, aes(x = reorder(Variable, Importance), y = Importance,fill = Variable)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  xlab("Variables") +
+  ylab("Mean Decrease in Gini") +
+  ggtitle("Variable Importance from Random Forest")+
+  theme(legend.position = "none")
+
+```
+
+> > As a variable, petal measurements are more important than sepal measurements.
+
+> > **5.Findings:**
+
+```{r}
+e1 <- data.frame(Model = c("Multinomial Logistic Regression","Random Forest"),
+                 Accuracy = c(accuracy,accuracy_rf))
+kable(e1, caption = "Model vs. Accuracy")
+```
+
+> > It is evident that the **multinomial logistic regression** model provides better accuracy.
+
+------------------------------------------------------------------------
+
+# Separate Datasets for Sepal and Petal Measurements:
+
+Let's create separate datasets for sepal and petal measurements from the Iris dataset.
+
+-   **Sepal Dataset:** This dataset will contain three columns: `Sepal.Length`, `Sepal.Width`, and `Species.`
+
+-   **Petal Dataset:** This dataset will contain three columns: `Petal.Length`, `Petal.Width`, and `Species.`
+
+> > **1.Sepal Dataset Analysis:**
+
+```{r}
+iris_sepal_train <- train_data %>% select(!(3:4))
+iris_sepal_test <- test_data %>% select(!(3:4))
+```
+
+```{r, echo=TRUE,results='hide'}
+model_sepal <- multinom(Species ~ ., data = iris_sepal_train)
+```
+
+```{r}
+summary(model_sepal)
+predictions_sepal <- predict(model_sepal, iris_sepal_test)
+confusion_matrix_sepal <- table(predictions_sepal, iris_sepal_test$Species)
+kable(confusion_matrix_sepal,caption =  "Confusion Matrix for Sepal Dataset")
+accuracy_sepal <- sum(diag(confusion_matrix_sepal))/sum(confusion_matrix_sepal)
+cat("Accuracy for Sepal dataset: ",accuracy_sepal*100,"%\n")
+```
+
+> > **2.Petal Dataset Analysis:**
+
+```{r}
+iris_petal_train <- train_data %>% select(!(1:2))
+iris_petal_test <- test_data %>% select(!(1:2))
+```
+
+```{r, echo=TRUE,results='hide'}
+model_petal <- multinom(Species ~ ., data = iris_petal_train)
+```
+
+```{r}
+summary(model_petal)
+predictions_petal <- predict(model_petal, iris_petal_test)
+confusion_matrix_petal <- table(predictions_petal, iris_petal_test$Species)
+kable(confusion_matrix_petal, caption = "Confusion Matrix for Petal Dataset")
+accuracy_petal <- sum(diag(confusion_matrix_petal))/sum(confusion_matrix_petal)
+cat("Accuracy for Petal dataset: ", accuracy_petal*100,"%\n")
+```
+
+> > **3.Findings:**
+
+```{r}
+e2 <- data.frame(Model = c("For Sepal Dataset","For Petal Dataset"),
+                 Accuracy = c(accuracy_sepal,accuracy_petal))
+kable(e2, caption = "Model vs. Accuracy")
+```
+
+> > The model for the petal dataset achieves higher accuracy compared to the model for the sepal dataset. This can be justified by examining the variable importance plot, which highlights the greater relevance of petal measurements for accurate species classification.
+
+------------------------------------------------------------------------
+
+# Principal Component Analysis (PCA):
+
+> > **1.Analysis:**
+
+```{r}
+iris_data <- iris[, -5]
+iris_data_scaled <- scale(iris_data)
+pca_result <- prcomp(iris_data_scaled, center = TRUE, scale. = TRUE)
+summary(pca_result)
+pca_result$rotation 
+pca_df <- data.frame(pca_result$x, Species = iris$Species)
+ggplot(pca_df, aes(PC1, PC2, color = Species)) +
+  geom_point(size = 2) +
+  ggtitle("PCA of Iris Dataset") +
+  xlab("Principal Component 1") +
+  ylab("Principal Component 2")
+```
+
+> > **2.Findings:**\
+> > \* According to the PCA results, `Setosa` is well separated from the other species, `Versicolor` and `Virginica`.
+
+------------------------------------------------------------------------
+
+# Separate models for different species:
+
+> > **1.Creating Binary Indicators for Iris Species:**\
+> > The code provided is used to create new binary indicator columns in the Iris dataset for each species: Setosa, Versicolor, and Virginica. Each new column will indicate whether the species in a particular row matches the specified species or not.
+
+```{r}
+iris$setosa <- ifelse(iris$Species == "setosa","setosa","other")
+iris$versicolor <- ifelse(iris$Species == "versicolor","versicolor","other")
+iris$virginica <- ifelse(iris$Species == "virginica","virginica","other")
+```
+
+> > **2.Creating Separate Datasets for Each Iris Species:**\
+> > Each new dataset includes the measurements of sepals and petals along with a binary indicator column for the specific species.
+
+```{r}
+data_setosa <- iris %>%
+  select(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width, setosa)
+
+data_versicolor <- iris %>%
+  select(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width, versicolor)
+
+data_virginica <- iris %>%
+  select(Sepal.Length, Sepal.Width, Petal.Length, Petal.Width, virginica)
+
+```
+
+> > **3.Creating Separate Models for Each Iris Species:**
+
+```{r}
+model_setosa <- glm(as.factor(setosa) ~ .,data = data_setosa, family = binomial)
+
+model_versicolor <- glm(as.factor(versicolor) ~ .,
+                        data = data_versicolor, family = binomial)
+
+model_virginica <- glm(as.factor(virginica) ~ .,
+                       data = data_virginica, family = binomial)
+```
+
+> > **4.Summary of Separate Models:**
+
+```{r}
+summary(model_setosa)
+summary(model_versicolor)
+summary(model_virginica)
+```
+
+> > **5.Predicting Iris Species with Multiple Models:**\
+> > I have a dataset of 10 random rows of iris flower measurements. Each row contained the sepal length, sepal width, petal length, petal width, and the actual species of the iris flower. Our goal was to predict the species of these flowers using previously trained models for Setosa, Versicolor, and Virginica.
+
+```{r}
+random_rows <- data.frame(
+  Sepal.Length = c(5.0, 6.7, 7.3, 5.4, 6.1, 4.9, 6.8, 7.7, 5.5, 6.0),
+  Sepal.Width = c(3.4, 3.1, 3.2, 3.9, 2.8, 3.6, 2.8, 2.6, 4.2, 3.0),
+  Petal.Length = c(1.5, 4.7, 6.3, 1.3, 4.0, 1.4, 4.8, 6.9, 1.5, 4.5),
+  Petal.Width = c(0.2, 1.5, 2.4, 0.4, 1.3, 0.1, 1.4, 2.3, 0.2, 1.5),
+  Actual_Species = c('setosa', 'versicolor', 'virginica', 'setosa', 'versicolor', 'setosa', 'versicolor', 'virginica', 'setosa', 'versicolor')
+)
+
+predictions_setosa <- predict(model_setosa, random_rows, type = "response")
+predictions_versicolor <- predict(model_versicolor, random_rows, type = "response")
+predictions_virginica <- predict(model_virginica, random_rows, type = "response")
+
+combined_predictions <- data.frame(predictions_setosa,predictions_versicolor 
+                         , predictions_virginica)
+
+final_predictions <- apply(combined_predictions, 1, function(row) {
+  colnames(combined_predictions)[which.max(row)]
+})
+
+final_results <- random_rows %>%
+  mutate(Predicted_Species = final_predictions)
+
+kable(final_results)
+```
+
+> > **6.Findings:**\
+> > After careful scrutiny, I can confidently say that my model perfectly predicts the species.
+
+# Future Engineering:
+
+> > **1.Adding Petal Ratio:**\
+> > First, we calculated the ratio of petal length to petal width for each iris flower. This new measure, called `petal_ratio`, is created by dividing the `Petal.Length` by the `Petal.Width.` This ratio helps us understand the proportion of the petal's length relative to its width, providing a new perspective on the flower's morphology.
+
+```{r}
+iris$petal_ratio <- iris$Petal.Length/iris$Petal.Width
+```
+
+> > **2.Adding Sepal Ratio:**\
+> > Repeat the same process for sepal measurements. This ratio offers insight into the proportion of the sepal's length compared to its width, adding another dimension to our understanding of the flower's structure.
+
+```{r}
+iris$sepal_ratio <- iris$Sepal.Length/iris$Sepal.Width
+iris_new <- iris %>%
+  select(petal_ratio,sepal_ratio,Species)
+```
+
+> > **3.Exploring the Enhanced Iris Dataset:**\
+> > After creating two new variables---`petal_ratio` and `sepal_ratio`---I store these enhancements in a new dataset named `iris_new.` This updated dataset now includes additional features that offer deeper insights into the morphology of the iris flowers.\
+> > To understand these new features better, I embark on a data journey through visualization.
+
+> > **4.Histograms of Enhanced Iris Dataset Variables:**
+
+```{r}
+d1 <- ggplot(iris_new, aes(x = petal_ratio)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.5, fill = "skyblue3", color = "black") +
+  geom_density(color = "black", size = 0.5, alpha = 0.1) +
+  labs(title = "Histogram of Petal Ratio",
+       x = "Petal Ratio",
+       y = "Density")
+
+d2 <- ggplot(iris_new, aes(x = sepal_ratio)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.5, fill = "skyblue3", color = "black") +
+  geom_density(color = "black", size = 0.5, alpha = 0.1) +
+  labs(title = "Histogram of Sepal Ratio",
+       x = "Sepal Ratio",
+       y = "Density")
+
+grid.arrange(d1,d2,ncol=2)
+```
+
+> > **5.Boxplots of Enhanced Iris Dataset Variables:**
+
+```{r}
+c1 <- ggplot(iris_new, aes(x = Species,y = petal_ratio, fill = Species))+
+  geom_boxplot(position = "dodge2")+
+  labs(title = "Boxplot of Petal Ratio",
+       x = "Species",
+       y = "Petal Ratio")+
+  theme(legend.position = "none") 
+
+c2 <- ggplot(iris_new, aes(x = Species,y = sepal_ratio, fill = Species))+
+  geom_boxplot(position = "dodge2")+
+  labs(title = "Boxplot of Sepal Ratio",
+       x = "Species",
+       y = "Sepal Ratio")+
+  theme(legend.position = "none") 
+
+grid.arrange(c1, c2, ncol = 2)
+```
+
+> > **6.Predictive Modeling for Enhanced Iris Dataset:**
+
+```{r}
+set.seed(895)
+trainIndex <- createDataPartition(iris_new$Species, p = 0.8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+iris_new_train <- iris_new[trainIndex, ]
+iris_new_test <- iris_new[-trainIndex, ]
+
+cat("Training data has", nrow(iris_new_train), "rows and", ncol(iris_new_train), "columns.\n")
+cat("Testing data has", nrow(iris_new_test), "rows and", ncol(iris_new_test), "columns.\n")
+```
+
+> > **7.Multinomial Logistic Regression for Enhanced Iris Dataset:**
+
+```{r, results='hide'}
+model_iris_new <- multinom(as.factor(Species) ~ ., data = iris_new_train)
+```
+
+```{r}
+summary(model_iris_new)
+predictions_iris_new <- predict(model_iris_new, iris_new_test)
+confusion_matrix_iris_new <- table(predictions_iris_new, iris_new_test$Species)
+kable(confusion_matrix_iris_new, caption = "Confusion Matrix for New Iris Dataset")
+accuracy_new_iris <- sum(diag(confusion_matrix_iris_new))/sum(confusion_matrix_iris_new)
+cat("Accuracy for New Iris dataset: ", accuracy_new_iris*100,"%\n")
+```
+
+> > **8.Random Forest for Enhanced Iris Dataset:**
+
+```{r}
+model_new_rf <- randomForest(Species ~ ., data = iris_new_train)
+print(model_new_rf)
+predictions_new_rf <- predict(model_new_rf, iris_new_test)
+confusion_matrix_new_rf <- table(predictions_new_rf, iris_new_test$Species)
+print(confusion_matrix_new_rf)
+accuracy_new_rf <- sum(diag(confusion_matrix_new_rf))/sum(confusion_matrix_new_rf)
+cat("Accuracy for New Iris dataset: ", accuracy_new_rf*100,"%\n")
+```
+
+> > **9.Assessing Variable Importance through Random Forest:**
+
+```{r}
+importance_new_df <- data.frame(Variable = rownames(importance(model_new_rf)), 
+                            Importance = importance(model_new_rf)[, "MeanDecreaseGini"])
+
+
+ggplot(importance_new_df, aes(x = reorder(Variable, Importance), y = Importance,fill = Variable)) +
+  geom_bar(stat = "identity",width = 0.7) +
+  coord_flip() +
+  xlab("Variables") +
+  ylab("Mean Decrease in Gini") +
+  ggtitle("Variable Importance from Random Forest")+
+  theme(legend.position = "none")
+```
+
+> > As a variable, `petal_ratio` is more important than `sepal_ratio.`
+
+> > **10.Findings:**
+
+```{r}
+e3 <- data.frame(Model = c("Multinomial Logistic Regression","Random Forest"),
+                 Accuracy = c(accuracy_new_iris,accuracy_new_rf))
+kable(e3, caption = "Model for Enhanced Iris Dataset  vs. Accuracy")
+```
+
+> > Here in case of enhanced Iris Dataset, multinomial logistic regression also demonstrates better accuracy compared to the random forest model.
+
+> > **11.Create an Interactive Form for Predicting Species:**\
+> > For this purpose, I use the model created by **multinomial logistic regression**. By applying **multinomial logistic regression**, I leverage its ability to classify observations into more than two categories, which enhances the **accuracy** and **reliability** of the predictions.
+
+```{r}
+ui <- fluidPage(
+  titlePanel("Iris Species Predictor"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("petal_ratio", "Petal Ratio:", value = "null"),
+      numericInput("sepal_ratio", "Sepal Ratio:", value = "null"),
+      actionButton("predict", "Predict")
+    ),
+    mainPanel(
+      textOutput("species"),
+      tableOutput("probabilities")
+    )
+  )
+)
+
+server <- function(input, output) {
+  observeEvent(input$predict, {
+    new_data <- data.frame(
+      petal_ratio = input$petal_ratio,
+      sepal_ratio = input$sepal_ratio
+    )
+    
+    prediction <- predict(model_iris_new, new_data, type = "prob")
+    species <- predict(model_iris_new, new_data)
+    
+    table <- data.frame(Species = c("Setosa","Versicolor","Virginica"),
+                        Probability = prediction)
+    
+    output$species <- renderText({
+      paste("Predicted Species:", species)
+    })
+   
+    output$probabilities <- renderTable({
+      table 
+    })
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+> > In the output table, the species-wise probabilities are provided. The species with the highest probability is the predicted species.
+
+------------------------------------------------------------------------
+
+# The End
+
+------------------------------------------------------------------------
